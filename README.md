@@ -36,10 +36,26 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000.
 
+## Password protection
+
+`middleware.js` is a Vercel Edge Middleware that asks for a username and password (HTTP Basic Auth) before serving any page. The credentials are not in the code. Set them as environment variables in Vercel:
+
+| Name | Value |
+|---|---|
+| `BASIC_AUTH_USER` | the username |
+| `BASIC_AUTH_PASSWORD` | the password (use a long one) |
+
+If either variable is missing, the site returns a 503 "locked" message instead of opening up. After adding or changing a variable, redeploy for it to take effect.
+
+This protects the dashboard page only. The Google Sheet itself is still readable by anyone who has its link, because the page reads it directly from the browser. Do not share the sheet link publicly.
+
+The middleware only runs on Vercel. When you run the page locally with `python3 -m http.server`, there is no password prompt.
+
 ## Deploy to Vercel
 
 1. In Vercel, choose Add New > Project and import this repository.
 2. Leave Framework Preset as "Other". No build command or output directory is needed; `vercel.json` already sets them.
-3. Click Deploy.
+3. Before deploying, open Environment Variables and add `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` for Production (and Preview if you use preview deployments).
+4. Click Deploy.
 
 Every push to the main branch redeploys the site. The dashboard reads the sheet live, so data changes show up on reload without a redeploy.
