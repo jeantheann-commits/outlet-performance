@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Outlet performance</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1b1f27;
+    --muted: #5a6372;
+    --border: #e1e4ea;
+    --grid: #e8ebf0;
+    --ok: #0f766e;
+    --bad: #d92d20;
+    --bad-bg: #fdecea;
+    --btn-active-bg: #1b1f27;
+    --btn-active-text: #ffffff;
+    --focus: #2563eb;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1218;
+      --card: #181c24;
+      --text: #eceff4;
+      --muted: #a0a9b8;
+      --border: #2b313c;
+      --grid: #262c36;
+      --ok: #3cbfae;
+      --bad: #ff7a70;
+      --bad-bg: #3a1d1b;
+      --btn-active-bg: #eceff4;
+      --btn-active-text: #0f1218;
+      --focus: #7aa7ff;
+      --shadow: none;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  header h1 { margin: 0; font-size: 1.5rem; line-height: 1.2; }
+  .meta { margin: 4px 0 0; color: var(--muted); font-size: .875rem; }
+
+  .filter {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 18px 0 16px;
+  }
+  .filter button {
+    min-height: 40px; padding: 0 16px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--card); color: var(--text);
+    font: inherit; font-size: .9375rem; cursor: pointer;
+  }
+  .filter button[aria-pressed="true"] {
+    background: var(--btn-active-bg); color: var(--btn-active-text);
+    border-color: var(--btn-active-bg);
+  }
+  button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .kpis {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow);
+  }
+  .kpi { padding: 14px 16px; }
+  .kpi .label { color: var(--muted); font-size: .8125rem; }
+  .kpi .value {
+    font-size: 1.75rem; font-weight: 650; line-height: 1.15; margin-top: 2px;
+    font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+  }
+  .kpi .sub { color: var(--muted); font-size: .8125rem; margin-top: 2px; }
+
+  section.panel { margin-top: 16px; padding: 16px; }
+  section.panel h2 { margin: 0; font-size: 1.0625rem; }
+  .panel-sub { margin: 2px 0 0; color: var(--muted); font-size: .875rem; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 6px 16px;
+    margin: 12px 0 8px; color: var(--muted); font-size: .8125rem;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .sw.ok { background: var(--ok); }
+  .sw.bad { background: var(--bad); }
+  .sw.line {
+    width: 20px; height: 0; border-radius: 0;
+    border-top: 2px dashed var(--text);
+  }
+
+  .chart { display: flex; align-items: flex-start; }
+  .chart-axis { flex: none; }
+  .chart-scroll {
+    flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hint { margin: 6px 0 0; color: var(--muted); font-size: .8125rem; }
+  svg text { font-family: inherit; fill: var(--muted); }
+  svg .val { fill: var(--text); font-size: 10px; }
+  svg .wk { font-size: 10.5px; }
+  svg .og { font-size: 12px; font-weight: 600; fill: var(--text); }
+  svg .tick { font-size: 11px; }
+  svg .thr-label { font-size: 11px; font-weight: 700; fill: var(--text); }
+  .bar-ok { fill: var(--ok); }
+  .bar-bad { fill: var(--bad); }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .baseline { stroke: var(--muted); stroke-width: 1; }
+  .sep { stroke: var(--border); stroke-width: 1; }
+  .thr-line { stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 6 4; }
+
+  .count {
+    display: inline-block; margin-left: 8px; padding: 1px 9px;
+    border-radius: 999px; background: var(--bad-bg); color: var(--bad);
+    font-size: .8125rem; font-weight: 650; vertical-align: 1px;
+  }
+  ul.attention { list-style: none; margin: 12px 0 0; padding: 0; }
+  ul.attention li {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-top: 1px solid var(--border);
+  }
+  ul.attention li:first-child { border-top: 0; }
+  .att-main { min-width: 0; }
+  .att-title { font-weight: 600; }
+  .att-detail { color: var(--muted); font-size: .8125rem; }
+  .badge {
+    flex: none; padding: 3px 10px; border-radius: 999px;
+    background: var(--bad-bg); color: var(--bad);
+    font-weight: 700; font-size: .875rem; font-variant-numeric: tabular-nums;
+  }
+  .empty { margin: 12px 0 0; color: var(--muted); }
+
+  .state {
+    margin-top: 28px; padding: 28px 20px; text-align: center;
+  }
+  .state h2 { margin: 0 0 6px; font-size: 1.125rem; }
+  .state p { margin: 0 auto; max-width: 560px; color: var(--muted); }
+  .state.error h2 { color: var(--bad); }
+  .state button {
+    margin-top: 16px; min-height: 40px; padding: 0 20px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--btn-active-bg); color: var(--btn-active-text);
+    font: inherit; cursor: pointer;
+  }
+  .spinner {
+    width: 28px; height: 28px; margin: 0 auto 12px;
+    border: 3px solid var(--border); border-top-color: var(--ok);
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+
+  @media (max-width: 720px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi .value { font-size: 1.4rem; }
+    header h1 { font-size: 1.3rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Outlet performance</h1>
+    <p class="meta" id="meta">&nbsp;</p>
+  </header>
+
+  <div id="loading" class="card state" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <h2>Loading data</h2>
+    <p>Fetching the latest numbers from Google Sheets…</p>
+  </div>
+
+  <div id="error" class="card state error" role="alert" hidden>
+    <h2>Couldn't load the data</h2>
+    <p id="errorMsg"></p>
+    <button type="button" id="retry">Try again</button>
+  </div>
+
+  <noscript>
+    <div class="card state error"><h2>JavaScript is off</h2><p>This dashboard needs JavaScript to load and draw the data.</p></div>
+  </noscript>
+
+  <main id="dash" hidden>
+    <div class="filter" id="filter" role="group" aria-label="Filter by outlet"></div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <section class="card panel" aria-labelledby="chartTitle">
+      <h2 id="chartTitle">Sales as % of target</h2>
+      <p class="panel-sub" id="chartSub"></p>
+      <div class="legend" aria-hidden="true">
+        <span><i class="sw ok"></i><span id="legOk"></span></span>
+        <span><i class="sw bad"></i><span id="legBad"></span></span>
+        <span><i class="sw line"></i><span id="legLine"></span></span>
+      </div>
+      <div class="chart">
+        <div class="chart-axis" id="chartAxis"></div>
+        <div class="chart-scroll" id="chartScroll" tabindex="0" aria-label="Chart, scrolls sideways">
+          <div id="chartPlot"></div>
+        </div>
+      </div>
+      <p class="hint" id="scrollHint" hidden>Scroll sideways to see more weeks.</p>
+    </section>
+
+    <section class="card panel" aria-labelledby="attTitle">
+      <h2 id="attTitle">Needs attention <span class="count" id="attCount"></span></h2>
+      <p class="panel-sub" id="attSub"></p>
+      <ul class="attention" id="attList"></ul>
+      <p class="empty" id="attEmpty" hidden></p>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ------------------------------------------------------------------
+   CONFIG: edit these values, nothing else needs to change.
+   The sheet must be a Google Sheet (not an uploaded .xlsx) and shared
+   as "Anyone with the link can view" so the browser can read it.
+------------------------------------------------------------------- */
+const CONFIG = {
+  SHEET_URL: "https://docs.google.com/spreadsheets/d/1MRCE-VzrE1ZLaNk2SDeMeCQXhfQNeaov4fKh0LkYpKg/edit?usp=drive_link",
+  TAB_NAME: "Combined",
+  THRESHOLD: 0.9,        // outlet-weeks below this share of target are flagged
+  CURRENCY_PREFIX: "",   // for example "$" or "S$"; empty shows plain numbers
+};
+/* ----------------------------------------------------------------- */
+
+const $ = (id) => document.getElementById(id);
+const nf = new Intl.NumberFormat("en-US");
+const state = { rows: [], outlet: "All" };
+const thrText = Math.round(CONFIG.THRESHOLD * 100) + "%";
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = (n) => CONFIG.CURRENCY_PREFIX + nf.format(Math.round(n));
+const pctText = (v) => (v * 100).toFixed(1) + "%";
+
+function weekShort(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return s;
+  return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+function weekLong(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return s;
+  return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/* ---------- loading and parsing ---------- */
+
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false;
+      } else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); field = ""; rows.push(row); row = [];
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function toNumber(s) {
+  const t = String(s == null ? "" : s).replace(/[^0-9.\-]/g, "");
+  return t === "" ? NaN : parseFloat(t);
+}
+
+function tableToRows(table) {
+  if (!table.length) throw new Error("The sheet came back empty.");
+  const header = table[0].map((h) => h.trim().toLowerCase());
+  const need = ["outlet", "week", "sales", "target", "orders", "returns"];
+  const idx = {}, missing = [];
+  need.forEach((k) => { idx[k] = header.indexOf(k); if (idx[k] < 0) missing.push(k); });
+  if (missing.length) {
+    throw new Error("The tab is missing these columns: " + missing.join(", ") +
+      ". Columns found: " + (table[0].filter(Boolean).join(", ") || "none") +
+      ". Check CONFIG.TAB_NAME.");
+  }
+  const rows = [];
+  for (let i = 1; i < table.length; i++) {
+    const r = table[i];
+    const outlet = (r[idx.outlet] || "").trim();
+    const sales = toNumber(r[idx.sales]);
+    const target = toNumber(r[idx.target]);
+    if (!outlet || !isFinite(sales) || !isFinite(target) || target <= 0) continue;
+    const orders = toNumber(r[idx.orders]);
+    const returns = toNumber(r[idx.returns]);
+    rows.push({
+      outlet,
+      week: (r[idx.week] || "").trim(),
+      sales, target,
+      orders: isFinite(orders) ? orders : 0,
+      returns: isFinite(returns) ? returns : 0,
+      pct: sales / target,
+    });
+  }
+  if (!rows.length) throw new Error("The tab has a header row but no usable data rows.");
+  return rows;
+}
+
+async function loadRows() {
+  const m = /\/d\/([a-zA-Z0-9_-]+)/.exec(CONFIG.SHEET_URL);
+  if (!m) throw new Error("CONFIG.SHEET_URL does not look like a Google Sheets link.");
+  const url = "https://docs.google.com/spreadsheets/d/" + m[1] +
+    "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(CONFIG.TAB_NAME);
+  if (location.protocol === "file:") {
+    throw new Error("This page was opened as a local file (file://), and Google blocks data requests from local files. Deploy it to Vercel, or run it from a local web server in this folder (for example: python3 -m http.server 8000, then open http://localhost:8000).");
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  let res;
+  try {
+    res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+  } catch (e) {
+    throw new Error(e.name === "AbortError"
+      ? "Google Sheets took too long to respond. Check your connection and try again."
+      : "Could not reach Google Sheets. Check your connection, and that the sheet is a Google Sheet shared as \"Anyone with the link can view\".");
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    throw new Error("Google Sheets answered with HTTP " + res.status +
+      ". Check that the link is correct and the sheet is shared as \"Anyone with the link can view\".");
+  }
+  const text = await res.text();
+  if (/^\s*</.test(text)) {
+    throw new Error("Google sent back a web page instead of data. The sheet is probably private, or it is an uploaded .xlsx file. Open it in Google Sheets, use File > Save as Google Sheets, share it as \"Anyone with the link can view\", then update CONFIG.SHEET_URL.");
+  }
+  return tableToRows(parseCSV(text));
+}
+
+/* ---------- rendering ---------- */
+
+function visibleRows() {
+  return state.outlet === "All" ? state.rows : state.rows.filter((r) => r.outlet === state.outlet);
+}
+
+function renderFilter() {
+  const outlets = [];
+  state.rows.forEach((r) => { if (!outlets.includes(r.outlet)) outlets.push(r.outlet); });
+  $("filter").innerHTML = ["All"].concat(outlets).map((o) =>
+    '<button type="button" data-outlet="' + esc(o) + '" aria-pressed="' + (o === state.outlet) + '">' +
+    esc(o) + "</button>").join("");
+}
+
+function renderKpis(rows) {
+  const sales = rows.reduce((a, r) => a + r.sales, 0);
+  const target = rows.reduce((a, r) => a + r.target, 0);
+  const orders = rows.reduce((a, r) => a + r.orders, 0);
+  const returns = rows.reduce((a, r) => a + r.returns, 0);
+  const gap = sales - target;
+  const cards = [
+    ["Total sales", money(sales), "Target " + money(target)],
+    ["% of target", target ? pctText(sales / target) : "n/a",
+      (gap >= 0 ? money(gap) + " above target" : money(-gap) + " below target")],
+    ["Orders", nf.format(orders), rows.length + " outlet-week" + (rows.length === 1 ? "" : "s")],
+    ["Returns %", orders ? pctText(returns / orders) : "n/a", nf.format(returns) + " returns of " + nf.format(orders) + " orders"],
+  ];
+  $("kpis").innerHTML = cards.map((c) =>
+    '<div class="card kpi"><div class="label">' + esc(c[0]) + '</div><div class="value">' +
+    esc(c[1]) + '</div><div class="sub">' + esc(c[2]) + "</div></div>").join("");
+}
+
+function renderChart(rows) {
+  const T = CONFIG.THRESHOLD;
+  const scroll = $("chartScroll");
+  const n = rows.length;
+  const H = 330, top = 24, bottom = 66, ph = H - top - bottom, AXW = 52;
+  const maxPct = Math.max(1, ...rows.map((r) => r.pct));
+  const step = maxPct > 2.5 ? 0.5 : 0.25;
+  const max = Math.max(1.25, Math.ceil((maxPct + 0.02) / step) * step);
+  const avail = scroll.clientWidth || 320;
+  const slot = Math.max(46, Math.min(90, Math.floor(avail / n)));
+  const W = n * slot;
+  const bw = Math.min(slot - 8, 44);
+  const y = (v) => top + ph * (1 - v / max);
+
+  let axis = '<svg width="' + AXW + '" height="' + H + '" aria-hidden="true">';
+  let plot = '<svg width="' + W + '" height="' + H + '" role="img" aria-label="Bar chart of sales as a percentage of target for each outlet and week. Bars below ' + thrText + ' are red.">';
+  for (let v = 0; v <= max + 1e-9; v += step) {
+    axis += '<text class="tick" x="' + (AXW - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + Math.round(v * 100) + "%</text>";
+    plot += '<line class="gridline" x1="0" x2="' + W + '" y1="' + y(v) + '" y2="' + y(v) + '"/>';
+  }
+  axis += '<text class="thr-label" x="' + (AXW - 6) + '" y="' + (y(T) + 4) + '" text-anchor="end">' + thrText + "</text></svg>";
+  plot += '<line class="baseline" x1="0" x2="' + W + '" y1="' + y(0) + '" y2="' + y(0) + '"/>';
+
+  rows.forEach((r, i) => {
+    const x = i * slot + (slot - bw) / 2;
+    const h = Math.max(1, ph * (r.pct / max));
+    const cls = r.pct < T ? "bar-bad" : "bar-ok";
+    const tip = r.outlet + ", week of " + weekLong(r.week) + ": " + pctText(r.pct) +
+      " of target (sales " + money(r.sales) + ", target " + money(r.target) + ")";
+    plot += '<g><title>' + esc(tip) + '</title>' +
+      '<rect class="' + cls + '" x="' + x + '" y="' + (y(0) - h) + '" width="' + bw + '" height="' + h + '" rx="3"/>' +
+      '<text class="val" x="' + (i * slot + slot / 2) + '" y="' + (y(0) - h - 5) + '" text-anchor="middle">' + pctText(r.pct) + "</text>" +
+      '<text class="wk" x="' + (i * slot + slot / 2) + '" y="' + (y(0) + 15) + '" text-anchor="middle">' + esc(weekShort(r.week)) + "</text></g>";
+  });
+
+  // outlet group labels and separators
+  let start = 0;
+  for (let i = 1; i <= n; i++) {
+    if (i === n || rows[i].outlet !== rows[start].outlet) {
+      const cx = ((start + i) / 2) * slot;
+      plot += '<text class="og" x="' + cx + '" y="' + (y(0) + 44) + '" text-anchor="middle">' + esc(rows[start].outlet) + "</text>";
+      if (i < n) plot += '<line class="sep" x1="' + (i * slot) + '" x2="' + (i * slot) + '" y1="' + (y(0) + 4) + '" y2="' + (H - 4) + '"/>';
+      start = i;
+    }
+  }
+  // threshold line last so it sits above the bars
+  plot += '<line class="thr-line" x1="0" x2="' + W + '" y1="' + y(T) + '" y2="' + y(T) + '"/></svg>';
+
+  $("chartAxis").innerHTML = axis;
+  $("chartPlot").innerHTML = plot;
+  $("scrollHint").hidden = !(W > avail + 1);
+}
+
+function renderAttention(rows) {
+  const T = CONFIG.THRESHOLD;
+  const bad = rows.filter((r) => r.pct < T).sort((a, b) => a.pct - b.pct);
+  $("attCount").textContent = bad.length;
+  $("attSub").textContent = "Outlet-weeks under " + thrText + " of target, worst first" +
+    (state.outlet === "All" ? "." : " for " + state.outlet + ".");
+  $("attList").innerHTML = bad.map((r) => {
+    const short = r.target - r.sales;
+    return "<li><div class=\"att-main\"><div class=\"att-title\">" + esc(r.outlet) + " · week of " + esc(weekLong(r.week)) +
+      "</div><div class=\"att-detail\">Sales " + money(r.sales) + " vs target " + money(r.target) +
+      " · " + money(short) + " short</div></div><span class=\"badge\">" + pctText(r.pct) + "</span></li>";
+  }).join("");
+  const empty = $("attEmpty");
+  empty.hidden = bad.length > 0;
+  empty.textContent = "No outlet-weeks are under " + thrText + " of target" +
+    (state.outlet === "All" ? "." : " for " + state.outlet + ".");
+}
+
+function render() {
+  const rows = visibleRows();
+  document.querySelectorAll("#filter button").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.outlet === state.outlet)));
+  $("chartSub").textContent = (state.outlet === "All" ? "All outlets" : state.outlet) +
+    ", one bar per outlet-week (" + rows.length + ").";
+  renderKpis(rows);
+  renderChart(rows);
+  renderAttention(rows);
+}
+
+/* ---------- start-up ---------- */
+
+function show(which) {
+  $("loading").hidden = which !== "loading";
+  $("error").hidden = which !== "error";
+  $("dash").hidden = which !== "dash";
+}
+
+async function init() {
+  show("loading");
+  try {
+    state.rows = await loadRows();
+    state.outlet = "All";
+    $("legOk").textContent = thrText + " of target or more";
+    $("legBad").textContent = "Below " + thrText;
+    $("legLine").textContent = thrText + " threshold";
+    renderFilter();
+    show("dash");              // visible first so the chart can measure its width
+    render();
+    const t = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    $("meta").textContent = CONFIG.TAB_NAME + " tab · " + state.rows.length + " rows · loaded at " + t;
+  } catch (e) {
+    $("errorMsg").textContent = e && e.message ? e.message : "Something went wrong.";
+    $("meta").innerHTML = "&nbsp;";
+    show("error");
+  }
+}
+
+$("filter").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-outlet]");
+  if (!b) return;
+  state.outlet = b.dataset.outlet;
+  render();
+});
+$("retry").addEventListener("click", init);
+
+let lastWidth = 0;
+new ResizeObserver(() => {
+  const w = $("chartScroll").clientWidth;
+  if (w && w !== lastWidth && !$("dash").hidden && state.rows.length) {
+    lastWidth = w;
+    renderChart(visibleRows());
+  }
+}).observe($("chartScroll"));
+
+init();
+</script>
+</body>
+</html>
